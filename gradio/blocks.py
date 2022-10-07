@@ -27,6 +27,7 @@ from gradio import (
     strings,
     utils,
 )
+from gradio.exceptions import GradioStopIteration
 from gradio.context import Context
 from gradio.deprecation import check_deprecated_parameters
 from gradio.documentation import (
@@ -698,14 +699,20 @@ class Blocks(BlockContext):
         if inspect.isasyncgenfunction(block_fn.fn):
             raise ValueError("Gradio does not support async generators.")
         if inspect.isgeneratorfunction(block_fn.fn):
+
+            def gradio_next(iterator):
+                try:
+                    return next(iterator)
+                except StopIteration:
+                    raise GradioStopIteration()
             if not self.enable_queue:
                 raise ValueError("Need to enable queue to use generators.")
             try:
                 if iterator is None:
                     iterator = prediction
-                prediction = next(iterator)
+                prediction = await anyio.to_thread.run_sync(gradio_next, iterator, limiter=self.limiter)
                 is_generating = True
-            except StopIteration:
+            except GradioStopIteration:
                 n_outputs = len(self.dependencies[fn_index].get("outputs"))
                 prediction = (
                     components._Keywords.FINISHED_ITERATING
