@@ -35,7 +35,7 @@ from gradio.documentation import (
     document_component_api,
     set_documentation_group,
 )
-from gradio.exceptions import DuplicateBlockError
+from gradio.exceptions import DuplicateBlockError, GradioStopIteration
 from gradio.utils import component_or_layout_class, delete_none
 
 set_documentation_group("blocks")
@@ -699,18 +699,14 @@ class Blocks(BlockContext):
         if inspect.isasyncgenfunction(block_fn.fn):
             raise ValueError("Gradio does not support async generators.")
         if inspect.isgeneratorfunction(block_fn.fn):
-
-            def gradio_next(iterator):
-                try:
-                    return next(iterator)
-                except StopIteration:
-                    raise GradioStopIteration()
             if not self.enable_queue:
                 raise ValueError("Need to enable queue to use generators.")
             try:
                 if iterator is None:
                     iterator = prediction
-                prediction = await anyio.to_thread.run_sync(gradio_next, iterator, limiter=self.limiter)
+                prediction = await anyio.to_thread.run_sync(
+                    utils.async_iteration, iterator, limiter=self.limiter
+                )
                 is_generating = True
             except GradioStopIteration:
                 n_outputs = len(self.dependencies[fn_index].get("outputs"))
